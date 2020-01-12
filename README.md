@@ -2,7 +2,7 @@
 
 ### Introduction
 
-This software runs the offical minecraft bedrock server in the background and intercepts packets coming into it using the code of [ProxyPass](https://github.com/NukkitX/ProxyPass/)
+This software runs the offical minecraft bedrock server in the background and intercepts packets coming into it using the code of [ProxyPass](https://github.com/NukkitX/ProxyPass/). The goal is to interfere as little as possible with the vanilla server, while also providing extra functionality on top.
 
 ### Usage
 
