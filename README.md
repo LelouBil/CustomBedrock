@@ -9,5 +9,6 @@ This software runs the offical minecraft bedrock server in the background and in
 Right now I made a few build-in commands but the plan would be to separete them in a different repo and to make a plugin format
 
 To use it you need to create a server directory next to the jar file and place the official bedrock server in it. (bedrock_server)
+You also need to configure the paths to the file and directory in the configuration file.
 
 
