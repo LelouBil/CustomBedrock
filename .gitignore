@@ -201,8 +201,9 @@ nbdist/
 # End of https://www.gitignore.io/api/java,maven,eclipse,netbeans,intellij+all
 
 # ProxyPass
-config.yml
+workdir/config.yml
 logs/
 logs/*
 packet-logs/
 packet-logs/*
+/.gradle/

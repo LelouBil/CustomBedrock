@@ -13,21 +13,29 @@ import com.nukkitx.nbt.tag.Tag;
 import com.nukkitx.protocol.bedrock.BedrockClient;
 import com.nukkitx.protocol.bedrock.BedrockPacketCodec;
 import com.nukkitx.protocol.bedrock.BedrockServer;
+import com.nukkitx.protocol.bedrock.packet.DisconnectPacket;
 import com.nukkitx.protocol.bedrock.v389.Bedrock_v389;
+import com.nukkitx.proxypass.commands.BaseCommand;
 import com.nukkitx.proxypass.network.ProxyBedrockEventHandler;
+import com.nukkitx.proxypass.network.bedrock.session.ProxyPlayerSession;
 import lombok.AccessLevel;
 import lombok.Getter;
+import lombok.Setter;
+import lombok.SneakyThrows;
 import lombok.extern.log4j.Log4j2;
+import org.apache.logging.log4j.Level;
+import org.apache.logging.log4j.Logger;
+import org.reflections.Reflections;
+import org.slf4j.LoggerFactory;
 
-import java.io.IOException;
-import java.io.InputStream;
-import java.io.OutputStream;
+import java.io.*;
+import java.lang.reflect.InvocationTargetException;
 import java.net.InetSocketAddress;
 import java.nio.file.*;
-import java.util.Collections;
-import java.util.IdentityHashMap;
-import java.util.Set;
+import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 import java.util.concurrent.ThreadLocalRandom;
 import java.util.concurrent.atomic.AtomicBoolean;
 
@@ -40,6 +48,8 @@ public class ProxyPass {
     public static final BedrockPacketCodec CODEC = Bedrock_v389.V389_CODEC;
     public static final int PROTOCOL_VERSION = CODEC.getProtocolVersion();
     private static final DefaultPrettyPrinter PRETTY_PRINTER = new DefaultPrettyPrinter();
+    private static InputStream stdout;
+    private static BufferedReader outputReader;
 
     static {
         DefaultIndenter indenter = new DefaultIndenter("    ", "\n");
@@ -67,9 +77,52 @@ public class ProxyPass {
     private Path baseDir;
     private Path sessionsDir;
     private Path dataDir;
+    private HashMap<String, BaseCommand> commandList = new HashMap<String, BaseCommand>();
+    @Setter
+    private UUID editSpawn = null;
+    private Path configPath;
+    private Hashtable<String,ProxyPlayerSession> players = new Hashtable<>();
+    private static Process vanillaServer;
+    private static OutputStream stdin;
+    private static BufferedWriter inputWriter;
 
     public static void main(String[] args) {
+        log.info("Launching default server");
+        executorService = Executors.newFixedThreadPool(10);
         ProxyPass proxy = new ProxyPass();
+        Thread serverThread = new Thread(() -> {
+            ProcessBuilder pb = new ProcessBuilder("/home/container/server/bedrock_server");
+            pb.directory(new File("/home/container/server"));
+
+
+            try {
+                vanillaServer = pb.start();
+                stdin = vanillaServer.getOutputStream();
+                stdout = vanillaServer.getInputStream();
+                outputReader = new BufferedReader(new InputStreamReader(stdout));
+                inputWriter = new BufferedWriter(new OutputStreamWriter(stdin));
+                inputWriter.flush();
+                System.out.println("got there");
+                String line;
+                while ((line = outputReader.readLine()) != null && proxy.running.get()){
+                    System.out.println(line);
+                }
+            }
+            catch (IOException e) {
+                e.printStackTrace();
+            }
+            finally {
+                try {
+                    inputWriter.flush();
+                    inputWriter.write("stop");
+                    inputWriter.newLine();
+                    stdin.close();
+                } catch (IOException ignored) {
+                }
+            }
+        });
+        //serverThread.setDaemon(true);
+        executorService.execute(serverThread);
         try {
             proxy.boot();
         } catch (IOException e) {
@@ -78,13 +131,7 @@ public class ProxyPass {
     }
 
     public void boot() throws IOException {
-        log.info("Loading configuration...");
-        Path configPath = Paths.get(".").resolve("config.yml");
-        if (Files.notExists(configPath) || !Files.isRegularFile(configPath)) {
-            Files.copy(ProxyPass.class.getClassLoader().getResourceAsStream("config.yml"), configPath, StandardCopyOption.REPLACE_EXISTING);
-        }
-
-        configuration = Configuration.load(configPath);
+        loadConfig();
 
         proxyAddress = configuration.getProxy().getAddress();
         targetAddress = configuration.getDestination().getAddress();
@@ -103,6 +150,22 @@ public class ProxyPass {
         Files.createDirectories(sessionsDir);
         Files.createDirectories(dataDir);
 
+        log.info("Getting commands");
+        Reflections r = new Reflections("com.nukkitx.proxypass");
+        Set<Class<? extends BaseCommand>> commands = r.getSubTypesOf(BaseCommand.class);
+        commands.forEach(c -> {
+            try {
+                log.debug("Discovered " + c.getCanonicalName());
+                BaseCommand cmd = c.getDeclaredConstructor(ProxyPass.class).newInstance(this);
+                commandList.put(cmd.getName(),cmd);
+            } catch (InstantiationException | IllegalAccessException | InvocationTargetException | NoSuchMethodException e) {
+                e.printStackTrace();
+            }
+
+        });
+        log.info("Commands done");
+        saveConfig();
+
         log.info("Loading server...");
         this.bedrockServer = new BedrockServer(this.proxyAddress);
         this.bedrockServer.setHandler(new ProxyBedrockEventHandler(this));
@@ -110,6 +173,21 @@ public class ProxyPass {
         log.info("RakNet server started on {}", proxyAddress);
 
         loop();
+    }
+
+    public boolean loadConfig() {
+        log.info("Loading configuration...");
+        configPath = Paths.get(".").resolve("config.yml");
+        try {
+        if (Files.notExists(configPath) || !Files.isRegularFile(configPath)) {
+                Files.copy(ProxyPass.class.getClassLoader().getResourceAsStream("config.yml"), configPath, StandardCopyOption.REPLACE_EXISTING);
+        }
+        configuration = Configuration.load(configPath);
+        return true;
+        } catch (IOException e) {
+            e.printStackTrace();
+            return false;
+        }
     }
 
     public BedrockClient newClient() {
@@ -120,25 +198,46 @@ public class ProxyPass {
         return client;
     }
 
+    private static ExecutorService executorService;
+
     private void loop() {
+
+        Thread input = new Thread(() -> {
+            Scanner s = new Scanner(System.in);
+            while (s.hasNextLine() && running.get()) {
+                String c = s.nextLine();
+                ProxyPass.this.runCommand(c);
+                if(c.equals("stop")){
+                    shutdown();
+                    return;
+                }
+            }
+        });
+        executorService.execute(input);
         while (running.get()) {
             try {
                 synchronized (this) {
                     this.wait();
                 }
             } catch (InterruptedException e) {
-                // ignore
+                e.printStackTrace();
             }
 
         }
+        executorService.shutdownNow();
+        DisconnectPacket p = new DisconnectPacket();
+        p.setKickMessage("Server closed");
 
         // Shutdown
-        this.clients.forEach(BedrockClient::close);
+        this.clients.forEach(c -> {
+            c.getSession().sendPacketImmediately(p);
+        });
         this.bedrockServer.close();
+
     }
 
     public void shutdown() {
-        if (running.compareAndSet(false, true)) {
+        if (running.compareAndSet(true, false)) {
             synchronized (this) {
                 this.notify();
             }
@@ -185,5 +284,21 @@ public class ProxyPass {
 
     public boolean isIgnoredPacket(Class<?> clazz) {
         return this.ignoredPackets.contains(clazz);
+    }
+
+    @SneakyThrows
+    public void runCommand(String command) {
+        inputWriter.write(command);
+        inputWriter.newLine();
+        inputWriter.flush();
+        //inputWriter.close();
+    }
+
+    public void saveConfig() {
+        try {
+            Configuration.save(configPath,configuration);
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
     }
 }

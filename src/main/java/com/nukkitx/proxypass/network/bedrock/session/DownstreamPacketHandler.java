@@ -54,6 +54,12 @@ public class DownstreamPacketHandler implements BedrockPacketHandler {
         return true;
     }
 
+    @Override
+    public boolean handle(TextPacket packet) {
+        return false;
+    }
+
+
     public boolean handle(AvailableEntityIdentifiersPacket packet) {
         proxy.saveNBT("entity_identifiers", packet.getTag());
         return false;
@@ -102,6 +108,7 @@ public class DownstreamPacketHandler implements BedrockPacketHandler {
     @Override
     public boolean handle(DisconnectPacket packet) {
         this.session.disconnect();
+        proxy.getPlayers().remove(player.getDisplayName());
         // Let the client see the reason too.
         return false;
     }

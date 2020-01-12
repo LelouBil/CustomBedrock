@@ -9,21 +9,30 @@ import com.nimbusds.jose.JOSEException;
 import com.nimbusds.jose.JWSObject;
 import com.nimbusds.jose.crypto.factories.DefaultJWSVerifierFactory;
 import com.nimbusds.jwt.SignedJWT;
+import com.nukkitx.math.vector.Vector3f;
 import com.nukkitx.protocol.bedrock.BedrockServerSession;
+import com.nukkitx.protocol.bedrock.data.*;
 import com.nukkitx.protocol.bedrock.handler.BedrockPacketHandler;
-import com.nukkitx.protocol.bedrock.packet.LoginPacket;
-import com.nukkitx.protocol.bedrock.packet.PlayStatusPacket;
+import com.nukkitx.protocol.bedrock.packet.*;
 import com.nukkitx.protocol.bedrock.util.EncryptionUtils;
+import com.nukkitx.proxypass.ChatColor;
 import com.nukkitx.proxypass.ProxyPass;
+import com.nukkitx.proxypass.Vector3;
+import com.nukkitx.proxypass.commands.BaseCommand;
 import com.nukkitx.proxypass.network.bedrock.util.ForgeryUtils;
 import io.netty.util.AsciiString;
+import lombok.Getter;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.log4j.Log4j2;
 import net.minidev.json.JSONObject;
 
 import java.io.IOException;
 import java.security.interfaces.ECPublicKey;
+import java.util.Arrays;
+import java.util.Collections;
 import java.util.UUID;
+import java.util.function.BiConsumer;
+import java.util.function.Consumer;
 
 @Log4j2
 @RequiredArgsConstructor
@@ -119,10 +128,21 @@ public class UpstreamPacketHandler implements BedrockPacketHandler {
             initializeProxySession();
         } catch (Exception e) {
             session.disconnect("disconnectionScreen.internalError.cantConnect");
+            proxy.getPlayers().remove(player.getDisplayName());
             throw new RuntimeException("Unable to complete login", e);
         }
         return true;
     }
+
+    @Override
+    public boolean handle(InventoryTransactionPacket packet) {
+        if(player.getRequests().empty()) return false;
+        if(packet.getTransactionType() != InventoryTransactionPacket.Type.ITEM_USE) return false;
+        BiConsumer<Vector3,ProxyPlayerSession> cons = player.popRequest();
+        cons.accept(Vector3.from3I(packet.getBlockPosition()),player);
+        return true;
+    }
+
 
     private void initializeProxySession() {
         log.debug("Initializing proxy session");
@@ -159,8 +179,45 @@ public class UpstreamPacketHandler implements BedrockPacketHandler {
             downstream.setPacketHandler(new DownstreamPacketHandler(downstream, proxySession, this.proxy));
 
             log.debug("Downstream connected");
-
+            proxy.getPlayers().put(player.getDisplayName(),player);
             //SkinUtils.saveSkin(proxySession, this.skinData);
         });
+    }
+
+    @Override
+    public boolean handle(TextPacket packet) {
+        log.info(packet.getType().toString() + ":" +packet.getMessage());
+        return false;
+    }
+
+    @Override
+    public boolean handle(AvailableCommandsPacket packet) {
+        packet.getCommands().add(new CommandData("spawn","sp", Collections.emptyList(), (byte) 0,new CommandEnumData("sl",new String[]{"slt"},true),new CommandParamData[][]{}));
+        session.sendPacketImmediately(packet);
+        return true;
+    }
+
+
+    @Override
+    public boolean handle(CommandRequestPacket data){
+        String cmd = data.getCommand();
+        String[] dt = cmd.substring(1).split(" ");
+        String strcmd = dt[0];
+        if(proxy.getCommandList().containsKey(strcmd)){
+            if (dt.length == 1){
+                dt = new String[]{};
+            }
+            else{
+                dt = Arrays.copyOfRange(dt,1,dt.length);
+            }
+            BaseCommand command = proxy.getCommandList().get(strcmd);
+            if(!player.hasPermission(command.getName())){
+                player.sendMessage(ChatColor.RED + "You do not have the permission to do this !");
+                return true;
+            }
+            player.sendMessage(command.onExecute(dt,player));
+            return true;
+        }
+        return false;
     }
 }

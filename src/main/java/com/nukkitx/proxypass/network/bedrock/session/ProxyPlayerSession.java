@@ -7,8 +7,10 @@ import com.nukkitx.protocol.bedrock.BedrockServerSession;
 import com.nukkitx.protocol.bedrock.BedrockSession;
 import com.nukkitx.protocol.bedrock.handler.BatchHandler;
 import com.nukkitx.protocol.bedrock.handler.BedrockPacketHandler;
+import com.nukkitx.protocol.bedrock.packet.TextPacket;
 import com.nukkitx.protocol.bedrock.util.EncryptionUtils;
 import com.nukkitx.proxypass.ProxyPass;
+import com.nukkitx.proxypass.Vector3;
 import io.netty.buffer.ByteBuf;
 import lombok.AccessLevel;
 import lombok.Getter;
@@ -23,6 +25,7 @@ import java.util.*;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
+import java.util.function.BiConsumer;
 import java.util.function.Supplier;
 
 @Log4j2
@@ -50,7 +53,7 @@ public class ProxyPlayerSession {
         this.logPath = dataPath.resolve("packets.log");
         this.upstream.addDisconnectHandler(reason -> {
             if (reason != DisconnectReason.DISCONNECTED) {
-                this.downstream.disconnect();
+                if(!this.downstream.isClosed())this.downstream.disconnect();
             }
         });
         try {
@@ -61,6 +64,16 @@ public class ProxyPlayerSession {
         if (proxy.getConfiguration().isLoggingPackets()) {
             executor.scheduleAtFixedRate(this::flushLogBuffer, 5, 5, TimeUnit.SECONDS);
         }
+    }
+
+    public void sendMessage(String msg) {
+        TextPacket p = new TextPacket();
+        p.setType(TextPacket.Type.SYSTEM);
+        p.setSourceName("");
+        p.setXuid("");
+        p.setPlatformChatId("");
+        p.setMessage(msg);
+        getUpstream().sendPacketImmediately(p);
     }
 
     public BatchHandler getUpstreamBatchHandler() {
@@ -88,6 +101,32 @@ public class ProxyPlayerSession {
                 log.error("Unable to flush packet log", e);
             }
         }
+    }
+
+    public boolean hasPermission(String name) {
+        HashMap<String, List<String>> permissions = proxy.getConfiguration().getPermissions();
+        if(permissions.containsKey("@a") &&  permissions.get("@a").contains(name)) return true;
+        if(!permissions.containsKey(this.getDisplayName())) return false;
+        return permissions.get(this.getDisplayName()).contains(name);
+    }
+
+    public String getDisplayName() {
+        return authData.getDisplayName();
+    }
+
+    public BiConsumer<Vector3, ProxyPlayerSession> popRequest() {
+        BiConsumer<Vector3, ProxyPlayerSession> rq = requests.pop();
+        waiting.pop();
+        return rq;
+    }
+
+    public void teleport(Vector3 position) {
+        String command  = String.format(Locale.US,"tp %1$s %2$f %3$f %4$f",getDisplayName(),position.getX(),position.getY(),position.getZ());
+        getProxy().runCommand(command);
+    }
+
+    public void teleport(ProxyPlayerSession player){
+        getProxy().runCommand("tp " + getDisplayName() + " " + player.getDisplayName());
     }
 
     private class ProxyBatchHandler implements BatchHandler {
@@ -126,4 +165,19 @@ public class ProxyPlayerSession {
             }
         }
     }
+
+
+    private Stack<BiConsumer<Vector3, ProxyPlayerSession>> requests = new Stack<BiConsumer<Vector3, ProxyPlayerSession>>();
+    private Stack<String> waiting = new Stack<>();
+
+    private HashMap<String,Object> playerCache = new HashMap<>();
+
+    public boolean getPosition(String key, BiConsumer<Vector3,ProxyPlayerSession> posConsumer){
+        if(waiting.contains(key)) return false;
+        waiting.push(key);
+        requests.push(posConsumer);
+        return true;
+    }
+
+
 }
