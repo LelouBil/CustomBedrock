@@ -7,6 +7,8 @@ destination:
 max-homes: 2
 pass-through: true
 log-packets: true
+server-file-path: "server/bedrock_server"
+server-workdir: "server/"
 spawn-coords:
   x: 0.0
   y: 0.0
