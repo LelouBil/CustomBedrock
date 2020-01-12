@@ -67,6 +67,11 @@ public class Configuration {
         }
     }
 
+    @JsonProperty("server-file-path")
+    public String serverpath;
+
+    @JsonProperty("server-workdir")
+    public String serverdir;
 
     @Getter
     @ToString

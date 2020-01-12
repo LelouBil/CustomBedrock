@@ -1,23 +1,19 @@
-## Address proxy will bind to.
 proxy:
-  host: 127.0.0.1
+  host: "127.0.0.1"
   port: 19122
-## Destination server which the client will connect to.
-## You are only able to join offline mode servers
 destination:
-  host: 127.0.0.1
+  host: "127.0.0.1"
   port: 19132
-## Pass packet buffers through to minimize processing (Disable to test protocol library for bugs)
+max-homes: 2
 pass-through: true
-## Log packets for each session
 log-packets: true
-
-## Packets to ignore to make your log more refined. These default packet are generally spammed
+spawn-coords:
+  x: 0.0
+  y: 0.0
+  z: 0.0
+permissions: {}
+home-list: {}
 ignored-packets:
-  - "NetworkStackLatencyPacket"
-  - "LevelChunkPacket"
-  - "MovePlayerPacket"
-  - "PlayerAuthInputPacket"
-  - "NetworkChunkPublisherUpdatePacket"
-  - "ClientCacheBlobStatusPacket"
-  - "ClientCacheMissResponsePacket"
+
+tpa-timeout: 30
+tp-time: 5

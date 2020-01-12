@@ -90,9 +90,12 @@ public class ProxyPass {
         log.info("Launching default server");
         executorService = Executors.newFixedThreadPool(10);
         ProxyPass proxy = new ProxyPass();
+        proxy.loadConfig();
+        String serverPath = proxy.configuration.getServerpath();
+        String serverDir = proxy.configuration.getServerdir();
         Thread serverThread = new Thread(() -> {
-            ProcessBuilder pb = new ProcessBuilder("/home/container/server/bedrock_server");
-            pb.directory(new File("/home/container/server"));
+            ProcessBuilder pb = new ProcessBuilder(serverPath);
+            pb.directory(new File(serverDir));
 
 
             try {
@@ -102,7 +105,6 @@ public class ProxyPass {
                 outputReader = new BufferedReader(new InputStreamReader(stdout));
                 inputWriter = new BufferedWriter(new OutputStreamWriter(stdin));
                 inputWriter.flush();
-                System.out.println("got there");
                 String line;
                 while ((line = outputReader.readLine()) != null && proxy.running.get()){
                     System.out.println(line);
@@ -131,7 +133,6 @@ public class ProxyPass {
     }
 
     public void boot() throws IOException {
-        loadConfig();
 
         proxyAddress = configuration.getProxy().getAddress();
         targetAddress = configuration.getDestination().getAddress();
