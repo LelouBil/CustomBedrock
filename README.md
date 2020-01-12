@@ -1,14 +1,14 @@
-# ProxyPass
+# CustomBedrock
 
 ### Introduction
 
-Proxy pass allows developers to MITM a vanilla client and server without modifying them. This allows for easy testing 
-of the Bedrock Edition protocol and observing vanilla network behavior.
+This software runs the offical minecraft bedrock server in the background and intercepts packets coming into it using the code of [ProxyPass](https://github.com/NukkitX/ProxyPass/). The goal is to interfere as little as possible with the vanilla server, while also providing extra functionality on top.
 
-__ProxyPass requires  Java 8 u162 or later to function correctly due to the encryption used during login__
+### Usage
 
-### Links
+Right now I made a few build-in commands but the plan would be to separete them in a different repo and to make a plugin format
 
-__[Jenkins](https://ci.nukkitx.com/job/NukkitX/job/ProxyPass/job/master/)__
+To use it you need to create a server directory next to the jar file and place the official bedrock server in it. (bedrock_server)
+You also need to configure the paths to the file and directory in the configuration file.
 
-__[Protocol library](https://github.com/NukkitX/Protocol) used in this project__
+
